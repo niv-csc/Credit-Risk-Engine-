@@ -2,28 +2,82 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const path = require('path');
-const data = require('./data');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
-app.use(cors());
+// ========== MIDDLEWARE (Critical for Vercel) ==========
+app.use(cors({
+  origin: '*',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 app.use(morgan('dev'));
 
-// Simple rule-based "ML" engine
+// ========== IN-MEMORY DATABASE ==========
+const data = {
+  users: [
+    {
+      id: '1',
+      name: 'Rajesh Kumar',
+      email: 'rajesh@example.com',
+      phone: '9876543210',
+      occupation: 'Software Engineer',
+      employer: 'Tech Solutions Ltd',
+      monthly_income: 75000,
+      credit_limit: 300000,
+      created_at: new Date('2024-01-15')
+    },
+    {
+      id: '2',
+      name: 'Priya Sharma',
+      email: 'priya@example.com',
+      phone: '9876543211',
+      occupation: 'School Teacher',
+      employer: 'Delhi Public School',
+      monthly_income: 45000,
+      credit_limit: 150000,
+      created_at: new Date('2024-01-20')
+    },
+    {
+      id: '3',
+      name: 'Amit Patel',
+      email: 'amit@example.com',
+      phone: '9876543212',
+      occupation: 'Small Business Owner',
+      employer: 'Patel & Co',
+      monthly_income: 120000,
+      credit_limit: 500000,
+      created_at: new Date('2024-01-10')
+    }
+  ],
+
+  transactions: [
+    { id: 't1', user_id: '1', amount: 25000, type: 'debit', category: 'shopping', timestamp: new Date('2024-02-15T10:30:00') },
+    { id: 't2', user_id: '1', amount: 5000, type: 'debit', category: 'atm_withdrawal', timestamp: new Date('2024-02-16T23:45:00') },
+    { id: 't3', user_id: '1', amount: 12000, type: 'debit', category: 'entertainment', timestamp: new Date('2024-02-17T22:30:00') },
+    { id: 't4', user_id: '1', amount: 75000, type: 'credit', category: 'salary', timestamp: new Date('2024-02-01T09:00:00') },
+    { id: 't5', user_id: '2', amount: 3000, type: 'debit', category: 'groceries', timestamp: new Date('2024-02-15T09:15:00') },
+    { id: 't6', user_id: '2', amount: 1500, type: 'debit', category: 'fuel', timestamp: new Date('2024-02-14T17:30:00') },
+    { id: 't7', user_id: '2', amount: 45000, type: 'credit', category: 'salary', timestamp: new Date('2024-02-01T09:00:00') },
+    { id: 't8', user_id: '3', amount: 35000, type: 'debit', category: 'business_expense', timestamp: new Date('2024-02-15T13:00:00') },
+    { id: 't9', user_id: '3', amount: 120000, type: 'credit', category: 'business_income', timestamp: new Date('2024-02-05T14:00:00') }
+  ]
+};
+
+// ========== RISK CALCULATION ENGINE ==========
 const calculateRiskScore = (userId) => {
   const user = data.users.find(u => u.id === userId);
   const transactions = data.transactions.filter(t => t.user_id === userId);
   
   if (!user) return null;
   
-  // Base score
   let score = 0.5;
   let factors = [];
   
-  // Get last 30 days transactions
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   
@@ -34,15 +88,17 @@ const calculateRiskScore = (userId) => {
     return {
       final_score: 0.3,
       risk_category: 'LOW',
-      factors: ['No recent spending activity']
+      factors: ['No recent spending activity'],
+      default_probability: 0.3,
+      anomaly_score: 0.2,
+      stress_score: 0.3,
+      generated_at: new Date()
     };
   }
   
-  // Calculate total spending
   const totalSpent = debitTxns.reduce((sum, t) => sum + t.amount, 0);
   const utilization = totalSpent / user.monthly_income;
   
-  // Rule 1: High utilization (>80%)
   if (utilization > 0.8) {
     score += 0.2;
     factors.push({
@@ -66,7 +122,6 @@ const calculateRiskScore = (userId) => {
     });
   }
   
-  // Rule 2: Night transactions (11 PM - 5 AM)
   const nightTxns = debitTxns.filter(t => {
     const hour = new Date(t.timestamp).getHours();
     return hour >= 23 || hour <= 5;
@@ -79,16 +134,8 @@ const calculateRiskScore = (userId) => {
       impact: 0.15,
       description: `${nightTxns.length} transactions between 11 PM - 5 AM` 
     });
-  } else if (nightTxns.length > 0) {
-    score += 0.05;
-    factors.push({
-      factor: 'Some night activity',
-      impact: 0.05,
-      description: `${nightTxns.length} night transactions` 
-    });
   }
   
-  // Rule 3: Cash advances/ATM withdrawals
   const cashTxns = debitTxns.filter(t => 
     t.category === 'atm_withdrawal' || t.category === 'cash_advance'
   );
@@ -100,85 +147,19 @@ const calculateRiskScore = (userId) => {
       impact: 0.15,
       description: `${cashTxns.length} ATM/cash withdrawals` 
     });
-  } else if (cashTxns.length > 0) {
-    score += 0.05;
-    factors.push({
-      factor: 'Some cash usage',
-      impact: 0.05,
-      description: `${cashTxns.length} cash transactions` 
-    });
   }
   
-  // Rule 4: Spending volatility
-  if (debitTxns.length > 1) {
-    const amounts = debitTxns.map(t => t.amount);
-    const mean = amounts.reduce((a, b) => a + b, 0) / amounts.length;
-    const variance = amounts.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / amounts.length;
-    const stdDev = Math.sqrt(variance);
-    const volatility = stdDev / mean;
-    
-    if (volatility > 1.5) {
-      score += 0.1;
-      factors.push({
-        factor: 'High spending volatility',
-        impact: 0.1,
-        description: 'Spending amounts vary significantly'
-      });
-    } else if (volatility > 1) {
-      score += 0.05;
-      factors.push({
-        factor: 'Moderate spending volatility',
-        impact: 0.05,
-        description: 'Spending amounts vary moderately'
-      });
-    } else {
-      score -= 0.05;
-      factors.push({
-        factor: 'Low spending volatility',
-        impact: -0.05,
-        description: 'Spending amounts are relatively stable'
-      });
-    }
-  }
-  
-  // Rule 5: Multiple small transactions (potential stress)
-  const smallTxns = debitTxns.filter(t => t.amount < 1000);
-  if (smallTxns.length > 10) {
-    score += 0.1;
-    factors.push({
-      factor: 'Many small transactions',
-      impact: 0.1,
-      description: `${smallTxns.length} small transactions (<₹1000)` 
-    });
-  }
-  
-  // Rule 6: Income stability (check regular credits)
-  const credits = recentTxns.filter(t => t.type === 'credit');
-  if (credits.length === 0) {
-    score += 0.1;
-    factors.push({
-      factor: 'No recent income',
-      impact: 0.1,
-      description: 'No credit transactions in last 30 days'
-    });
-  }
-  
-  // Normalize score to 0-1
   score = Math.max(0, Math.min(1, score));
   
-  // Determine category
   let category;
   if (score >= 0.7) category = 'HIGH';
   else if (score >= 0.4) category = 'MEDIUM';
   else category = 'LOW';
   
-  // Sort factors by impact
-  factors.sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
-  
   return {
     final_score: score,
     risk_category: category,
-    factors: factors.slice(0, 5), // Top 5 factors
+    factors: factors.slice(0, 5),
     default_probability: score,
     anomaly_score: Math.min(score + 0.1, 1),
     stress_score: Math.min(score * 1.2, 1),
@@ -186,25 +167,41 @@ const calculateRiskScore = (userId) => {
   };
 };
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date(), environment: process.env.NODE_ENV });
-});
-
-// Get all users
-app.get('/api/users', (req, res) => {
-  const usersWithRisk = data.users.map(user => {
-    const risk = calculateRiskScore(user.id);
-    return {
-      ...user,
-      risk_score: risk?.final_score,
-      risk_category: risk?.risk_category
-    };
+// ========== TEST ROUTES (Put these FIRST) ==========
+app.get('/api/test', (req, res) => {
+  res.json({ 
+    message: '✅ API is working!', 
+    status: 'ok',
+    time: new Date(),
+    env: process.env.NODE_ENV
   });
-  res.json(usersWithRisk);
 });
 
-// Get single user
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'healthy', 
+    timestamp: new Date(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// ========== API ROUTES ==========
+app.get('/api/users', (req, res) => {
+  try {
+    const usersWithRisk = data.users.map(user => {
+      const risk = calculateRiskScore(user.id);
+      return {
+        ...user,
+        risk_score: risk?.final_score,
+        risk_category: risk?.risk_category
+      };
+    });
+    res.json(usersWithRisk);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/users/:id', (req, res) => {
   const user = data.users.find(u => u.id === req.params.id);
   if (!user) {
@@ -213,7 +210,6 @@ app.get('/api/users/:id', (req, res) => {
   res.json(user);
 });
 
-// Get user transactions
 app.get('/api/users/:id/transactions', (req, res) => {
   const transactions = data.transactions
     .filter(t => t.user_id === req.params.id)
@@ -221,7 +217,6 @@ app.get('/api/users/:id/transactions', (req, res) => {
   res.json(transactions);
 });
 
-// Get user risk score
 app.get('/api/users/:id/risk', (req, res) => {
   const risk = calculateRiskScore(req.params.id);
   if (!risk) {
@@ -230,41 +225,34 @@ app.get('/api/users/:id/risk', (req, res) => {
   res.json(risk);
 });
 
-// Add transaction (triggers risk recalculation)
 app.post('/api/users/:id/transactions', (req, res) => {
-  const { amount, category, type } = req.body;
-  const userId = req.params.id;
-  
-  const newTransaction = {
-    id: data.generateId('transactions'),
-    user_id: userId,
-    amount,
-    type,
-    category,
-    timestamp: new Date()
-  };
-  
-  data.transactions.push(newTransaction);
-  
-  // Calculate new risk score
-  const risk = calculateRiskScore(userId);
-  
-  res.status(201).json({
-    transaction: newTransaction,
-    risk: risk
-  });
+  try {
+    const { amount, category, type } = req.body;
+    const userId = req.params.id;
+    
+    const newTransaction = {
+      id: (data.transactions.length + 1).toString(),
+      user_id: userId,
+      amount: parseFloat(amount),
+      type,
+      category,
+      timestamp: new Date()
+    };
+    
+    data.transactions.push(newTransaction);
+    const risk = calculateRiskScore(userId);
+    
+    res.status(201).json({ transaction: newTransaction, risk });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// Get dashboard stats
 app.get('/api/stats', (req, res) => {
   const stats = {
     total_users: data.users.length,
     total_transactions: data.transactions.length,
-    risk_distribution: {
-      high: 0,
-      medium: 0,
-      low: 0
-    }
+    risk_distribution: { high: 0, medium: 0, low: 0 }
   };
   
   data.users.forEach(user => {
@@ -277,28 +265,26 @@ app.get('/api/stats', (req, res) => {
   res.json(stats);
 });
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date(), environment: process.env.NODE_ENV });
-});
-
-// Serve static files in production
+// ========== CATCH-ALL FOR PRODUCTION ==========
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/build')));
-
   app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
   });
 }
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📊 API endpoints:`);
-  console.log(`   GET  /api/users`);
-  console.log(`   GET  /api/users/:id`);
-  console.log(`   GET  /api/users/:id/transactions`);
-  console.log(`   GET  /api/users/:id/risk`);
-  console.log(`   POST /api/users/:id/transactions`);
-  console.log(`   GET  /api/stats`);
+// ========== ERROR HANDLING ==========
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
 });
+
+// ========== START SERVER ==========
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`📊 Test API: http://localhost:${PORT}/api/test`);
+  console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
+});
+
+// Export for Vercel
+module.exports = app;

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Debug</title>
+    <style>
+        body { font-family: monospace; padding: 20px; }
+        .success { color: green; }
+        .error { color: red; }
+        button { padding: 10px; margin: 5px; }
+        pre { background: #f4f4f4; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>🔧 API Debug Page</h1>
+    
+    <button onclick="testAPI('/api/test')">Test API</button>
+    <button onclick="testAPI('/api/health')">Health Check</button>
+    <button onclick="testAPI('/api/users')">Get Users</button>
+    <button onclick="testAPI('/api/stats')">Get Stats</button>
+    
+    <h3>Results:</h3>
+    <pre id="result">Click a button to test...</pre>
+
+    <script>
+        async function testAPI(endpoint) {
+            const result = document.getElementById('result');
+            result.textContent = 'Loading...';
+            
+            try {
+                const response = await fetch(endpoint);
+                const data = await response.json();
+                result.textContent = JSON.stringify(data, null, 2);
+                result.className = 'success';
+            } catch (error) {
+                result.textContent = 'Error: ' + error.message;
+                result.className = 'error';
+            }
+        }
+    </script>
+</body>
+</html>

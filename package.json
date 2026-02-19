@@ -1,8 +1,7 @@
 {
-  "name": "risk-prototype",
+  "name": "credit-risk-engine",
   "version": "1.0.0",
-  "description": "Behavioural Credit Risk Engine Prototype",
-  "main": "server/index.js",
+  "description": "Behavioural Credit Risk Engine",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "cd server && npm run dev",
@@ -12,14 +11,10 @@
     "start": "node server/index.js",
     "vercel-build": "cd client && npm install && npm run build"
   },
-  "keywords": ["credit-risk", "react", "node", "prototype", "vercel"],
-  "author": "Your Name",
-  "license": "MIT",
   "devDependencies": {
     "concurrently": "^8.2.2"
   },
   "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=9.0.0"
+    "node": ">=18.0.0"
   }
 }
